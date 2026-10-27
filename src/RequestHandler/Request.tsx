@@ -428,6 +428,53 @@ export const api = {
    */
   updateMe: (body: UpdateMeRequest) =>
     request<MeResponse>('PATCH', '/me', body, { authenticated: true }),
+
+  /**
+   * Upload a profile picture as multipart/form-data.
+   * Field name must be "avatar". Returns the updated MeResponse with the new profileImage URL.
+   */
+  uploadAvatar: async (imageUri: string, mimeType: string): Promise<MeResponse> => {
+    const accessToken = await TokenStorage.getAccessToken();
+    if (!accessToken) throw new ApiError('UNAUTHORIZED', 'Not authenticated');
+
+    const filename = imageUri.split('/').pop() ?? 'avatar.jpg';
+
+    const formData = new FormData();
+    formData.append('avatar', {
+      uri: imageUri,
+      name: filename,
+      type: mimeType,
+    } as unknown as Blob);
+
+    const controller = new AbortController();
+    const timerId = setTimeout(() => controller.abort(), 30_000);
+    let response: Response;
+    try {
+      response = await fetch(`${ENV.BASE_URL}/me/avatar`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'x-platform': 'ios',
+        },
+        body: formData,
+        signal: controller.signal,
+      });
+    } catch (err: unknown) {
+      clearTimeout(timerId);
+      if (err instanceof Error && err.name === 'AbortError')
+        throw new ApiError('TIMEOUT', 'Request timed out.');
+      throw new ApiError('NETWORK_ERROR', 'Network unavailable.');
+    } finally {
+      clearTimeout(timerId);
+    }
+
+    let data: unknown;
+    try { data = await response.json(); } catch {
+      throw new ApiError('PARSE_ERROR', 'Invalid response from server.', response.status);
+    }
+    if (!response.ok) throw parseBackendError(data, response.status);
+    return data as MeResponse;
+  },
 };
 
 // ─────────────────────────────────────────────
@@ -436,6 +483,21 @@ export const api = {
 
 export type LoanStatus = 'PENDING' | 'ACTIVE' | 'PAID' | 'DEFAULTED' | 'REJECTED';
 export type RepaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED';
+export type InstalmentStatus = 'PENDING' | 'PARTIAL' | 'PAID' | 'OVERDUE' | 'ROLLED_OVER';
+
+export interface InstalmentSummary {
+  id: string;
+  instalmentNumber: number;
+  dueDate: string;
+  principalKobo: number;
+  interestKobo: number;
+  totalDueKobo: number;
+  overdueChargeKobo: number;
+  amountPaidKobo: number;
+  outstandingKobo: number;
+  status: InstalmentStatus;
+  paidAt: string | null;
+}
 
 export interface LoanSummary {
   id: string;
@@ -450,6 +512,11 @@ export interface LoanSummary {
   disbursedAt: string | null;
   dueAt: string | null;
   createdAt: string;
+  nextDue: {
+    instalmentNumber: number;
+    dueDate: string;
+    outstandingKobo: number;
+  } | null;
 }
 
 export interface RepaymentSummary {
@@ -460,6 +527,42 @@ export interface RepaymentSummary {
   status: RepaymentStatus;
   paidAt: string | null;
   createdAt: string;
+}
+
+// GET /v1/loans/calculate
+export interface LoanCalculationResult {
+  amountKobo: number;
+  termMonths: number;
+  annualInterestRate: string;
+  monthlyInstalmentKobo: number;
+  totalRepaymentKobo: number;
+  totalInterestKobo: number;
+  schedule: Array<{
+    month: number;
+    principalKobo: number;
+    interestKobo: number;
+    instalmentKobo: number;
+    remainingBalanceKobo: number;
+  }>;
+}
+
+// GET /v1/loans/:loanId/detail
+export interface LoanDetail {
+  loan: LoanSummary;
+  schedule: InstalmentSummary[];
+  repayments: RepaymentSummary[];
+  stats: {
+    paidCount: number;
+    totalCount: number;
+    overdueCount: number;
+    totalPaidKobo: number;
+    progressPct: number;
+    nextDue: {
+      instalmentNumber: number;
+      dueDate: string;
+      outstandingKobo: number;
+    } | null;
+  };
 }
 
 // POST /v1/loans
@@ -479,6 +582,15 @@ export interface RepayLoanRequest {
 // Extend the `api` object with loans + repayments namespaces
 // ─────────────────────────────────────────────────────────────────
 export const loanApi = {
+  /**
+   * Calculate repayment breakdown without applying.
+   * Public — no auth token needed.
+   */
+  calculate: (amountKobo: number, termMonths: number) =>
+    request<LoanCalculationResult>(
+      'GET',
+      `/loans/calculate?amountKobo=${amountKobo}&termMonths=${termMonths}`,
+    ),
   /** Apply for a new loan */
   apply: (body: ApplyLoanRequest) =>
     request<LoanSummary>('POST', '/loans', body, { authenticated: true }),
@@ -491,7 +603,15 @@ export const loanApi = {
   get: (loanId: string) =>
     request<LoanSummary>('GET', `/loans/${loanId}`, undefined, { authenticated: true }),
 
-  /** Make a repayment against a specific loan */
+  /** Full loan detail — loan + schedule + repayments + stats in one call */
+  detail: (loanId: string) =>
+    request<LoanDetail>('GET', `/loans/${loanId}/detail`, undefined, { authenticated: true }),
+
+  /** Full instalment schedule for a loan */
+  schedule: (loanId: string) =>
+    request<InstalmentSummary[]>('GET', `/loans/${loanId}/schedule`, undefined, { authenticated: true }),
+
+  /** Make a repayment against a specific loan (supports part payment) */
   repay: (loanId: string, body: RepayLoanRequest) =>
     request<RepaymentSummary>('POST', `/loans/${loanId}/repay`, body, { authenticated: true }),
 

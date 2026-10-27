@@ -1,18 +1,22 @@
 import Constants from 'expo-constants';
 
-// Pull the channel/release channel to decide which base URL to use.
-// In development (Expo Go / local build) releaseChannel is undefined.
-const channel = Constants.expoConfig?.extra?.releaseChannel ?? 'development';
+// The build profile sets EXPO_PUBLIC_RELEASE_CHANNEL at build time via eas.json.
+// Falls back to 'development' when running locally in Expo Go.
+const channel =
+  process.env.EXPO_PUBLIC_RELEASE_CHANNEL ??
+  Constants.expoConfig?.extra?.releaseChannel ??
+  'development';
 
 const BASE_URLS: Record<string, string> = {
   development: 'http://localhost:3000/v1',
-  staging: 'https://api-staging.fundly.app/v1',   // update when you have a staging URL
-  production: 'https://api.fundly.app/v1',         // update when you have a production URL
+  staging:     'https://fundly-backend-staging.up.railway.app/v1',
+  production:  'https://fundly-backend-production.up.railway.app/v1',
 };
 
 const ENV = {
   BASE_URL: BASE_URLS[channel] ?? BASE_URLS.development,
-  IS_DEV: channel === 'development',
+  IS_DEV:   channel === 'development',
+  channel,
 };
 
 export default ENV;

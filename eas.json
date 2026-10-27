@@ -9,13 +9,37 @@
       "distribution": "internal",
       "ios": {
         "simulator": true
+      },
+      "env": {
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "development"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "staging"
       }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "staging"
+      }
+    },
+    "android-apk": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "staging"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_RELEASE_CHANNEL": "production"
+      }
     }
   },
   "submit": {

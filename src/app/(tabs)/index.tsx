@@ -14,7 +14,7 @@ import { AppText } from '@/components/AppText';
 import { AppButton } from '@/components/AppButton';
 import { Colors, Spacing, Radius, FontSize, FontWeight } from '@/constants/theme';
 import { useAuthStore } from '@/store/auth';
-import { loanApi, repaymentApi, type LoanSummary, type RepaymentSummary } from '@/RequestHandler/Request';
+import { loanApi, repaymentApi, type LoanSummary, type RepaymentSummary, type InstalmentSummary } from '@/RequestHandler/Request';
 import { SvgXml } from 'react-native-svg';
 import { Svg } from '@/config/svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -121,6 +121,7 @@ export default function HomeScreen() {
 
   const [loans, setLoans] = useState<LoanSummary[]>([]);
   const [recentRepayments, setRecentRepayments] = useState<RepaymentSummary[]>([]);
+  const [activeSchedule, setActiveSchedule] = useState<InstalmentSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -132,6 +133,14 @@ export default function HomeScreen() {
       ]);
       setLoans(loansData);
       setRecentRepayments(repData.slice(0, 5));
+      // Load schedule for the active loan so we can show the dot grid
+      const active = loansData.find((l) => l.status === 'ACTIVE');
+      if (active) {
+        const sched = await loanApi.schedule(active.id);
+        setActiveSchedule(sched);
+      } else {
+        setActiveSchedule([]);
+      }
     } catch {
       // Silently fail on refresh — stale data is better than a crash
     } finally {
@@ -229,6 +238,47 @@ export default function HomeScreen() {
         <View style={styles.section}>
           <AppText variant="subheading" style={styles.sectionTitle}>Active Loan</AppText>
           <LoanCard loan={activeLoan} onPress={() => router.push('/(tabs)/Loan')} />
+
+          {/* Instalment dot grid */}
+          {activeSchedule.length > 0 && (
+            <View style={styles.dotGridCard}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.sm }}>
+                <AppText variant="label">
+                  {activeSchedule.filter((i) => i.status === 'PAID').length} of {activeSchedule.length} paid
+                </AppText>
+                {activeLoan.nextDue && (
+                  <AppText variant="caption" color={Colors.primary}>
+                    Next: {new Date(activeLoan.nextDue.dueDate).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' })}
+                  </AppText>
+                )}
+              </View>
+              <View style={styles.dotGrid}>
+                {activeSchedule.slice(0, 24).map((inst) => {
+                  const color =
+                    inst.status === 'PAID'        ? Colors.success :
+                    inst.status === 'PARTIAL'     ? Colors.warning :
+                    inst.status === 'OVERDUE'     ? Colors.error   :
+                    inst.status === 'ROLLED_OVER' ? '#8B5CF6'      :
+                    Colors.border;
+                  return <View key={inst.id} style={[styles.dot, { backgroundColor: color }]} />;
+                })}
+              </View>
+              {activeLoan.nextDue && (
+                <View style={styles.nextDueRow}>
+                  <AppText variant="bodySmall" color={Colors.text.muted}>Next payment due</AppText>
+                  <AppText variant="label" color={Colors.primary}>
+                    {formatNaira(activeLoan.nextDue.outstandingKobo)}
+                  </AppText>
+                </View>
+              )}
+              <AppButton
+                label="Pay Now"
+                onPress={() => router.push('/(tabs)/Repay')}
+                size="sm"
+                style={{ marginTop: Spacing.md }}
+              />
+            </View>
+          )}
         </View>
       )}
 
@@ -252,7 +302,7 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* ── Recent transactions ── */}
+     
       {recentRepayments.length > 0 && (
         <View style={styles.section}>
           <View style={styles.sectionRow}>
@@ -341,6 +391,21 @@ const styles = StyleSheet.create({
     padding: Spacing.xl, alignItems: 'center',
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+
+  // Dot grid
+  dotGridCard: {
+    backgroundColor: Colors.background, borderRadius: Radius.lg,
+    padding: Spacing.md, marginTop: Spacing.md,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06, shadowRadius: 8, elevation: 2,
+  },
+  dotGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  dot:     { width: 10, height: 10, borderRadius: 5 },
+  nextDueRow: {
+    flexDirection: 'row', justifyContent: 'space-between',
+    backgroundColor: Colors.primaryLight, borderRadius: Radius.sm,
+    padding: Spacing.sm, marginTop: Spacing.md,
   },
 
   // Transactions

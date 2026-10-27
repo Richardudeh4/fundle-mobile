@@ -10,7 +10,7 @@ export default function TabsLayout() {
   labelStyle={{ color: "#8E8E93" }}  
   backgroundColor="#ffffff"  
     >
-      <NativeTabs.Trigger name="index">
+    <NativeTabs.Trigger name="index">
          <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="house.fill" md="home" />
       </NativeTabs.Trigger>
